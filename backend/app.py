@@ -2,7 +2,7 @@ import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List
+from typing import List, Literal
 import numpy as np
 from modules.data import fetch_stock_data, calculate_returns, calculate_annual_metrics
 from modules.portfolio import Portfolio
@@ -24,6 +24,12 @@ app.add_middleware(
 class StockRequest(BaseModel):
     tickers: List[str]
     period: str = "1y"
+    risk_free_rate: float = 0.02
+    objective: Literal["max_sharpe", "min_volatility"] = "max_sharpe"
+
+class AssetStats(BaseModel):
+    expected_return: float
+    volatility: float
 
 class OptimizationResponse(BaseModel):
     optimal_weights: dict
@@ -32,6 +38,10 @@ class OptimizationResponse(BaseModel):
     sharpe_ratio: float
     frontier_volatilities: List[float]
     frontier_returns: List[float]
+    random_volatilities: List[float]
+    random_returns: List[float]
+    asset_stats: dict[str, AssetStats]
+    correlation_matrix: dict[str, dict[str, float]]
 
 @app.get("/")
 def read_root():
@@ -55,17 +65,27 @@ def optimize_portfolio(request: StockRequest) -> OptimizationResponse:
         raise HTTPException(status_code=400, detail=f"Ticker(s) invalide(s) ou sans données: {', '.join(missing)}")
 
     returns = calculate_returns(prices)
-    annual_returns, cov_matrix, _ = calculate_annual_metrics(returns)
+    annual_returns, cov_matrix, corr_matrix = calculate_annual_metrics(returns)
 
-    portfolio = Portfolio(annual_returns.values, cov_matrix.values)
+    portfolio = Portfolio(annual_returns.values, cov_matrix.values, risk_free_rate=request.risk_free_rate)
     optimizer = PortfolioOptimizer(portfolio)
 
-    optimal_weights = optimizer.optimize_max_sharpe()
+    if request.objective == "min_volatility":
+        optimal_weights = optimizer.optimize_min_volatility()
+    else:
+        optimal_weights = optimizer.optimize_max_sharpe()
+
     metrics = portfolio.portfolio_metrics(optimal_weights)
 
     volatilities, returns_frontier = optimizer.generate_frontier(n_points=50)
+    random_vol, random_ret, _ = optimizer.random_portfolios(n=1500)
 
     weights_dict = {ticker: float(w) for ticker, w in zip(request.tickers, optimal_weights)}
+    asset_stats = {
+        ticker: AssetStats(expected_return=float(annual_returns[ticker]) * 100, volatility=float(np.sqrt(cov_matrix.loc[ticker, ticker])) * 100)
+        for ticker in request.tickers
+    }
+    correlation = {t1: {t2: float(corr_matrix.loc[t1, t2]) for t2 in request.tickers} for t1 in request.tickers}
 
     return OptimizationResponse(
         optimal_weights=weights_dict,
@@ -73,7 +93,11 @@ def optimize_portfolio(request: StockRequest) -> OptimizationResponse:
         volatility=float(metrics["volatility"]) * 100,
         sharpe_ratio=float(metrics["sharpe_ratio"]),
         frontier_volatilities=volatilities,
-        frontier_returns=returns_frontier
+        frontier_returns=returns_frontier,
+        random_volatilities=random_vol,
+        random_returns=random_ret,
+        asset_stats=asset_stats,
+        correlation_matrix=correlation
     )
 
 @app.get("/api/health")

@@ -103,3 +103,21 @@ class PortfolioOptimizer:
                 pass
         
         return volatilities, returns
+
+    def random_portfolios(self, n: int = 2000) -> Tuple[List[float], List[float], List[float]]:
+        """
+        Simule des portefeuilles à poids aléatoires (Monte Carlo)
+
+        Returns:
+            (volatilities, returns, sharpe_ratios) en pourcentage pour vol/return
+        """
+        weights = np.random.dirichlet(np.ones(self.n_assets), size=n)
+
+        returns = weights @ self.portfolio.expected_returns
+        variances = np.einsum('ij,jk,ik->i', weights, self.portfolio.cov_matrix, weights)
+        volatilities = np.sqrt(variances)
+
+        with np.errstate(divide='ignore', invalid='ignore'):
+            sharpe = np.where(volatilities > 0, (returns - self.portfolio.risk_free_rate) / volatilities, 0)
+
+        return (volatilities * 100).tolist(), (returns * 100).tolist(), sharpe.tolist()

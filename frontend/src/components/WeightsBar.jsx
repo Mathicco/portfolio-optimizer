@@ -1,21 +1,18 @@
-const SERIES = [
-  "var(--series-1)",
-  "var(--series-2)",
-  "var(--series-3)",
-  "var(--series-4)",
-  "var(--series-5)",
-  "var(--series-6)",
-];
+import InfoTooltip from "./InfoTooltip";
+import { concentrationInsight } from "../lib/insights";
 
-export default function WeightsBar({ weights }) {
+export default function WeightsBar({ weights, tickerColors }) {
   const entries = Object.entries(weights).sort((a, b) => b[1] - a[1]);
   const max = Math.max(...entries.map(([, w]) => w));
 
   return (
     <div className="weights-bar">
-      <h3>Allocation optimale</h3>
+      <h3>
+        Allocation optimale
+        <InfoTooltip text="La part du budget à investir dans chaque actif pour atteindre le portefeuille optimal. Un poids à 0% signifie que cet actif n'améliore pas le couple rendement/risque du portefeuille, compte tenu des autres." />
+      </h3>
       <ul>
-        {entries.map(([ticker, weight], i) => (
+        {entries.map(([ticker, weight]) => (
           <li key={ticker}>
             <span className="ticker-label">{ticker}</span>
             <div className="bar-track">
@@ -23,7 +20,7 @@ export default function WeightsBar({ weights }) {
                 className="bar-fill"
                 style={{
                   width: `${(weight / max) * 100}%`,
-                  background: SERIES[i % SERIES.length],
+                  background: tickerColors[ticker],
                 }}
               />
             </div>
@@ -31,6 +28,7 @@ export default function WeightsBar({ weights }) {
           </li>
         ))}
       </ul>
+      <p className="section-hint">{concentrationInsight(weights)}</p>
     </div>
   );
 }
